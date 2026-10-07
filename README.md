@@ -130,14 +130,52 @@ TIMEZONE=Asia/Taipei
 
 ---
 
-## 🏃 執行方式
+## 🐳 Docker Compose 容器化部署（推薦）
+
+本專案提供一鍵式 Docker Compose 部署配置，內建 Google 思源黑體（`fonts-noto-cjk`，確保 Matplotlib 圖表繁中正常渲染無豆腐字）與台北時區（`Asia/Taipei`），並自動透過 Volume 掛載持久化 SQLite 資料庫與執行日誌。
+
+### 1. 啟動與管理服務
+
+```bash
+# 構建映像檔並在背景常駐啟動（自動啟動 17:00 排程與 Telegram Bot 監聽）
+docker compose up -d
+
+# 查看服務即時日誌
+docker compose logs -f
+
+# 停止服務
+docker compose down
+
+# 程式碼或依賴更新時重新構建啟動
+docker compose up -d --build
+```
+
+### 2. 透過 Docker 執行臨時任務
+
+```bash
+# 手動單次掃描並發送 Telegram 通知
+docker compose run --rm screener python run_once.py
+
+# 手動單次掃描，不發送通知（僅終端機輸出）
+docker compose run --rm screener python run_once.py --no-notify
+
+# 診斷指定股票之 Stage 階段與 VCP 狀態 (例: 台積電 2330)
+docker compose run --rm screener python analyze.py 2330
+
+# 即時產出市場寬度圖表
+docker compose run --rm screener python -m src.market_breadth
+```
+
+---
+
+## 🏃 本地直接執行方式 (Python 環境)
 
 ### 1. 啟動 Telegram 機器人常駐服務（含定時排程與指令監聽）
 
 ```bash
 python main.py
 ```
-> 每天下午 17:00 會自動執行選股掃描、產出市場寬度圖表並推播至設定的 Telegram 頻道。同時常駐監聽 `/scan`、`/analyze`、`/breadth` 指令。
+> 每天下午 17:00 會自動執行選股掃描、產出市場寬度圖表並推播至設定的 Telegram 頻道。同時常駐監聽 `/scan`、`/analyze`、`/disp`、`/breadth` 指令。
 
 ### 2. 單次手動執行掃描
 
@@ -198,9 +236,12 @@ python -m src.market_breadth
 
 ```
 tw-stock-vcp-screener/
+├── .dockerignore             # Docker 建置排除名單
 ├── .env                      # 實際環境變數（不進 Git）
 ├── .env.example              # 環境變數設定範本
 ├── .gitignore                # Git 忽略設定
+├── Dockerfile                # 容器映像檔建置配置 (含 CJK 繁中字型與時區)
+├── docker-compose.yml        # Docker Compose 一鍵部署配置
 ├── requirements.txt          # 專案依賴套件
 ├── README.md                 # 專案說明文件
 ├── main.py                   # Telegram 互動 Bot 與定時排程主入口
@@ -216,6 +257,7 @@ tw-stock-vcp-screener/
     ├── analyzer_core.py      # 個股綜合診斷核心
     ├── beta.py               # Beta 值計算模組 (上市/上櫃大盤基準)
     ├── data_fetcher.py       # 歷史股價下載與本地快取
+    ├── disposition.py        # 處置與注意股票爬蟲及出關倒數模組
     ├── market_breadth.py     # 市場寬度指標統計與折線圖繪製
     ├── market_cap.py         # 總市值抓取與計算
     ├── scorer.py             # VCP 綜合評分模組

@@ -13,7 +13,14 @@ try:
     import matplotlib.pyplot as plt
 
     matplotlib.use("Agg")
-    plt.rcParams["font.sans-serif"] = ["Microsoft JhengHei", "SimHei", "Arial Unicode MS", "DejaVu Sans"]
+    plt.rcParams["font.sans-serif"] = [
+        "Noto Sans CJK TC",
+        "WenQuanYi Zen Hei",
+        "Microsoft JhengHei",
+        "SimHei",
+        "Arial Unicode MS",
+        "DejaVu Sans",
+    ]
     plt.rcParams["axes.unicode_minus"] = False
     HAS_MATPLOTLIB = True
 except ImportError:

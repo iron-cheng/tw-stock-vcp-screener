@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  screener:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tw-stock-vcp-screener
+    restart: unless-stopped
+    # 載入本地 .env 環境變數 (包含 Telegram Token、篩選門檻等)
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Taipei
+      - PYTHONUNBUFFERED=1
+    # 資料持久化掛載：確保重啟或升級容器時 SQLite 資料庫與日誌圖表不遺失
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    # 日誌滾動限制：避免長時間運行的 stdout 撐滿硬碟空間
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
