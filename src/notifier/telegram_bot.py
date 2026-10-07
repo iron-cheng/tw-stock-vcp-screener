@@ -119,7 +119,14 @@ class TelegramNotifier(BaseNotifier):
             elif attn_info:
                 disp_badge = " [⚠️注意股]"
 
-            message += f"{emoji} *[{stock_id} {name}]({yahoo_tech_url})*{stage_badge}{disp_badge} ⭐ {score:.0f}分\n"
+            # 出貨日標籤
+            dist_badge = ""
+            details = res.get("details", {})
+            dist_days = details.get("vcp", {}).get("distribution_days", 0) if isinstance(details, dict) else 0
+            if dist_days >= 3:
+                dist_badge = f" [🔻出貨{dist_days}日]"
+
+            message += f"{emoji} *[{stock_id} {name}]({yahoo_tech_url})*{stage_badge}{disp_badge}{dist_badge} ⭐ {score:.0f}分\n"
             message += f"   💰 收盤: {close:,.0f} | 🎯 突破: {pivot:,.0f} | 距突破: {distance}%\n"
             message += f"   🏢 市值: {mcap_str} | 💵 均金額: {turnover_str}\n"
             message += f"   ⚡ 1年Beta: {beta_str} | 📉 收斂: {contraction_str}\n"

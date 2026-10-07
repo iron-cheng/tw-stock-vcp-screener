@@ -168,6 +168,10 @@ def format_stock_diagnostic(result: Dict[str, Any]) -> str:
     vol_dec = vcp_result.get("volume_declining", False)
 
     lines.append(f"   收斂: {'✅' if is_converging else '❌'} | 底底高: {'✅' if higher_lows else '❌'} | 量縮: {'✅' if vol_dec else '❌'}")
+    dist_days = vcp_result.get("distribution_days", 0)
+    if dist_days >= 3:
+        consec = vcp_result.get("consecutive_distribution", 0)
+        lines.append(f"   ⚠️ 近期出貨日: {dist_days}天/25日" + (f" (含連續 {consec} 日放量下跌)" if consec >= 2 else ""))
     if not is_vcp and failure_reasons:
         lines.append(f"   ⚠️ 未達標: {failure_reasons[0]}")
     lines.append("")

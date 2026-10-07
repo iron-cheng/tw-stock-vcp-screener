@@ -38,7 +38,7 @@ def test_valid_vcp_convergence():
     assert res["is_converging"] is True
     assert res["higher_lows"] is True
     assert res["tightness"] <= 8.0
-    assert len(res["checklist"]) == 7
+    assert len(res["checklist"]) >= 7
 
 
 def test_expanding_volatility_rejection():

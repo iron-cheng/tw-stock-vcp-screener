@@ -328,6 +328,8 @@ class VCPScreener:
                         "volume_declining": vcp_result.get("volume_declining", False),
                         "action_stage": vcp_result.get("action_stage", "UNCONFIRMED"),
                         "action_stage_desc": vcp_result.get("action_stage_desc", ""),
+                        "distribution_days": vcp_result.get("distribution_days", 0),
+                        "consecutive_distribution": vcp_result.get("consecutive_distribution", 0),
                     },
                     "disposition": disp_info,
                     "attention": attn_info,

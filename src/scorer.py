@@ -68,6 +68,14 @@ def calculate_score(
                     vol_score = min(raw_vol_score, 7.5)  # 處置走弱則保守計分
             else:
                 vol_score = raw_vol_score
+    # 出貨日懲罰 (Distribution Day Penalty)：每天扣 2 分，連續出貨額外扣 3 分
+    dist_day_count = vcp_result.get("distribution_days", 0)
+    consecutive_dist = vcp_result.get("consecutive_distribution", 0)
+    dist_penalty = min(dist_day_count * 2.0, 10.0)
+    if consecutive_dist >= 2:
+        dist_penalty += 3.0
+    vol_score = max(0.0, vol_score - dist_penalty)
+
     score += vol_score
     
     # 4. Distance to pivot (20%)

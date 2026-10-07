@@ -103,6 +103,98 @@ def _build_contractions_from_extrema(
     return contractions, contraction_details, low_prices, high_prices, avg_volumes
 
 
+def _count_distribution_days(
+    df: pd.DataFrame,
+    lookback: int = 25,
+    min_decline_pct: float = 0.2,
+) -> Dict[str, Any]:
+    """偵測近期出貨日 (Distribution Day) 數量與連續出貨天數.
+
+    出貨日定義 (依據 William O'Neil / Mark Minervini)：
+    - 當日收盤跌幅 >= min_decline_pct% (相對於前一日收盤)
+    - 且當日成交量 > 前一日成交量 或 當日成交量 > 50 日平均量
+    代表機構法人正在趁高出脫持股。
+
+    Args:
+        df: 歷史價格 DataFrame (需包含 Close, Volume)
+        lookback: 回看天數 (預設 25 個交易日，O'Neil 經典定義)
+        min_decline_pct: 最低跌幅門檻百分比 (預設 0.2%)
+
+    Returns:
+        Dict: {
+            "count": int,              # lookback 期間出貨日總數
+            "consecutive_recent": int,  # 最近末端連續出貨天數
+            "details": List[Dict],     # 每筆出貨日的明細
+            "is_heavy_distribution": bool  # 是否達到嚴重出貨警戒
+        }
+    """
+    result: Dict[str, Any] = {
+        "count": 0,
+        "consecutive_recent": 0,
+        "details": [],
+        "is_heavy_distribution": False,
+    }
+
+    close_col = "Close" if "Close" in df.columns else "close"
+    vol_col = "Volume" if "Volume" in df.columns else "volume"
+
+    if len(df) < max(lookback + 1, 51):
+        return result
+
+    # 計算 50 日平均成交量 (作為出貨量基準)
+    vol_50d = float(df[vol_col].tail(50).mean())
+
+    # 取得近 lookback+1 天的資料 (需要前一天作為比對基準)
+    df_window = df.tail(lookback + 1).copy().reset_index(drop=True)
+    close_vals = df_window[close_col].values
+    vol_vals = df_window[vol_col].values
+
+    dist_days: List[Dict[str, Any]] = []
+    # 從第 1 天開始比對 (第 0 天為前一日基準)
+    for i in range(1, len(df_window)):
+        prev_close = float(close_vals[i - 1])
+        cur_close = float(close_vals[i])
+        prev_vol = float(vol_vals[i - 1])
+        cur_vol = float(vol_vals[i])
+
+        if prev_close <= 0:
+            continue
+
+        # 計算當日跌幅
+        change_pct = (cur_close - prev_close) / prev_close * 100.0
+
+        # 出貨日判定：跌幅 >= 門檻 且 (當日量 > 前一日量 或 當日量 > 50日均量)
+        if change_pct <= -min_decline_pct and (cur_vol > prev_vol or cur_vol > vol_50d):
+            dist_days.append({
+                "offset": i - 1,  # 在 lookback 窗口內的偏移 (0 = 最舊)
+                "change_pct": round(change_pct, 2),
+                "volume": cur_vol,
+                "vol_vs_prev": round(cur_vol / prev_vol, 2) if prev_vol > 0 else 0.0,
+                "vol_vs_50d": round(cur_vol / vol_50d, 2) if vol_50d > 0 else 0.0,
+            })
+
+    # 計算最近末端連續出貨天數 (從最後一天往回數)
+    consecutive_recent = 0
+    total_bars = len(df_window) - 1  # lookback 窗口內的實際天數
+    dist_offsets = {d["offset"] for d in dist_days}
+    for j in range(total_bars - 1, -1, -1):
+        if j in dist_offsets:
+            consecutive_recent += 1
+        else:
+            break
+
+    count = len(dist_days)
+    # 嚴重出貨判定：25日內 >= 5 天出貨日，或連續 >= 2 天出貨
+    is_heavy = count >= 5 or consecutive_recent >= 2
+
+    result["count"] = count
+    result["consecutive_recent"] = consecutive_recent
+    result["details"] = dist_days
+    result["is_heavy_distribution"] = is_heavy
+
+    return result
+
+
 def _locate_active_base(
     df: pd.DataFrame, max_lookback: int = 90, min_base_days: int = 15
 ) -> pd.DataFrame:
@@ -320,6 +412,23 @@ def detect_vcp(
     vol_dry_up_at_pivot = bool(recent_5d_vol <= vol_50d * 0.95) or bool(last_wave_vol <= base_avg_vol * 0.95)
     volume_declining = vol_shrinking_across_waves and vol_dry_up_at_pivot
 
+    # 7b. 【檢驗 3b：近期出貨日偵測 (Distribution Day Detection)】
+    # 依據 William O'Neil / Mark Minervini 方法論，偵測近 25 日內放量下跌的機構出貨日
+    dist_day_result = _count_distribution_days(df, lookback=25, min_decline_pct=0.2)
+    dist_day_count = dist_day_result["count"]
+    consecutive_dist = dist_day_result["consecutive_recent"]
+    is_heavy_distribution = dist_day_result["is_heavy_distribution"]
+
+    # Distribution Day 門檻 (依掃描模式差異化)
+    if resolved_mode == "strict":
+        max_dist_days = 3   # 嚴格模式：25日內最多 3 天出貨日
+    elif resolved_mode == "loose":
+        max_dist_days = 6   # 寬鬆模式：25日內最多 6 天
+    else:  # standard
+        max_dist_days = 4   # 標準模式：25日內最多 4 天 (O'Neil 經典門檻)
+
+    dist_day_passed = dist_day_count <= max_dist_days
+
     # 8. 【突破 (Breakout) 與 回踩 (Retest) 動態追蹤】
     recent_bars = min(5, len(df))
     recent_slice = df.tail(recent_bars)
@@ -376,6 +485,15 @@ def detect_vcp(
         failure_reasons.append(f"距樞紐點過遠: 當前距 Pivot 突破價達 {distance_to_pivot:+.1f}% (尚未進入發動買點區)")
     if base_depth > eff_max_base_depth:
         failure_reasons.append(f"形態回檔過深: 基底最大跌幅 ({base_depth:.1f}%) 超過容許上限 ({eff_max_base_depth:.1f}%)")
+    if not dist_day_passed:
+        failure_reasons.append(
+            f"近期機構出貨頻繁: 25日內出貨日達 {dist_day_count} 天 "
+            f"(超過門檻 {max_dist_days} 天，大戶可能正在出脫持股)"
+        )
+    if consecutive_dist >= 2:
+        failure_reasons.append(
+            f"⚠️ 近期連續 {consecutive_dist} 日放量下跌 (連續出貨日警訊，大戶連續出貨)"
+        )
 
     # 基礎形態要素檢核
     convergence_passed = is_converging if eff_strict_convergence else (tightness <= eff_max_tightness)
@@ -385,6 +503,7 @@ def detect_vcp(
         and higher_lows
         and base_depth <= eff_max_base_depth
         and tightness <= eff_max_tightness
+        and dist_day_passed
     )
 
     # 量能檢核：突破初期允許爆量，回踩與買點區要求量縮
@@ -442,6 +561,17 @@ def detect_vcp(
             "passed": base_depth <= eff_max_base_depth,
             "detail": f"{base_depth:.1f}% ({'深度適中' if base_depth <= eff_max_base_depth else '回檔過深'})",
         },
+        {
+            "name": f"近期無機構出貨 (≤ {max_dist_days}天/25日)",
+            "passed": dist_day_passed,
+            "detail": (
+                f"25日內出貨日 {dist_day_count} 天"
+                + (f", 近期連續 {consecutive_dist} 日" if consecutive_dist >= 2 else "")
+                + (" ⚠️ 大戶可能正在出貨" if not dist_day_passed else "")
+                + (f" ⚠️ 連續{consecutive_dist}日放量下跌" if consecutive_dist >= 2 and dist_day_passed else "")
+                + (" ✅ 無異常出貨" if dist_day_passed and consecutive_dist < 2 else "")
+            ),
+        },
     ]
 
     is_disposed = bool(disposition_info and disposition_info.get("stock_id"))
@@ -487,5 +617,8 @@ def detect_vcp(
     result["failure_reasons"] = failure_reasons
     result["is_disposed"] = is_disposed
     result["disposition_info"] = disposition_info
+    result["distribution_days"] = dist_day_count
+    result["consecutive_distribution"] = consecutive_dist
+    result["is_heavy_distribution"] = is_heavy_distribution
 
     return result

@@ -191,6 +191,11 @@ def print_stock_diagnostic_report(
     print(f"    • 基底樞紐高點 (Pivot)    : {pivot:,.2f} 元 (當前距突破點: {distance:+.2f}%)")
     print(f"    • 基底區間與最大深度      : {base_depth:.1f}% (最高: {base_high:,.2f} | 最低: {base_low:,.2f} | 整理: {base_days}天)")
     print(f"    • 收縮波次進程 ({len(contractions)}T)      : {' ➜ '.join(f'-{c:.1f}%' for c in contractions) if contractions else '無交替收縮波段 (單邊走勢)'}")
+    if vcp_result.get("distribution_days", 0) > 0:
+        dist_count = vcp_result["distribution_days"]
+        consec = vcp_result.get("consecutive_distribution", 0)
+        print(f"    • 近期出貨日 (Distribution): {dist_count} 天/25日" + 
+              (f" ⚠️ (含連續 {consec} 日放量下跌)" if consec >= 2 else ""))
 
     if contraction_details:
         prog_parts = [f"T{c['seq']}: -{c['depth_pct']:.1f}% ({c['bars']}天, 低:{c.get('low_price', 0):,.1f})" for c in contraction_details]
